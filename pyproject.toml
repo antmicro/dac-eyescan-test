@@ -1,0 +1,9 @@
+[project]
+name = "eyescan"
+authors = [
+    { name = "Antmicro" }
+]
+description = "Simple utility to connect to DAC38J8x and perform eyescan measurements"
+license={text = "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)"}
+version = "0.0.1"
+dependencies = {file = ["requirements.txt"]}
