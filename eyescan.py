@@ -16,6 +16,9 @@ from instructions import START_COMMAND, END_COMMAND, COMMANDS, ws_char, ws_cfg, 
 
 BITS_NUM = 1
 
+FTDI_BIT_MODE = 0xFF
+BITBANG_OUTPUT_BIT = 2
+
 def jtag_write_read(dev, data):
     c = dev.write(bytes(data))
     return dev.read(c)
@@ -58,6 +61,7 @@ def read_back_from_char(dev, voltage_off, phase_off, bit_select, is_r0=True):
 
 with ftd2xx.open(0) as dev:
     dev.resetDevice()
+    dev.setBitMode(1 << BITBANG_OUTPUT_BIT, FTDI_BIT_MODE)
     queue_status = dev.getQueueStatus()
     if queue_status > 0:
         dev.read(queue_status)
