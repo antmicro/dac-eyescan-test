@@ -1,7 +1,7 @@
 import ftd2xx
 import argparse
 import pathlib
-from instructions import START_COMMAND, END_COMMAND, COMMANDS, ws_char, ws_cfg, ws_core
+from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, ws_char, ws_cfg, ws_core
 
 # See https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/73/2625.DAC38J84-RX-Tests-_2D00_-Version-1p1.pdf
 
@@ -16,8 +16,12 @@ from instructions import START_COMMAND, END_COMMAND, COMMANDS, ws_char, ws_cfg, 
 # ws_unshadowed 0x34 Unshadowed. Fields for silicon characterization.
 # ws_char 0x33 Char. Fields used for eye scan.
 
-FTDI_BIT_MODE = 0xFF
+FTDI_SYNC_BITBANG_MODE = 0x04
+FTDI_BIT_MASK = 0x308b
 BITBANG_OUTPUT_BIT = 2
+
+DEVICE_NUMBER = 18
+NUMBER_OF_DEVICES_IN_CHAIN = 18
 
 
 def jtag_write_read(dev, data):
@@ -26,39 +30,51 @@ def jtag_write_read(dev, data):
 
 
 def encode_bitbang_ir(data):
-    trstb = ['11'] * 12 + ['11' for _ in range(len(data) - 1)] + ['1'] * 27
-    tms = ['00'] * 9 + ['1100'] + ['00' for _ in range(len(data) - 1)
-                                   ] + ["00111100000000000000000000000"]
-    tdo = ['00'] * 12 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27
-    tdi = ['00'] * 12 + [i + i for i in data] + ['0'] * 27
-    tclk = ['00'] * 5 + ['01'] * 7 + ['01' for _ in range(len(data))
-                                      ] + ['01'] * 12 + ['0']
+    trstb = "".join(['00'] * 12 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27)
+    tms = "".join(['00'] * 9 + ['1100'] + ['00' for _ in range(len(data) - 1)
+                                   ] + ["00111100000000000000000000000"])
+    tdo = "".join(['00'] * 12 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27)
+    tdi = "".join(['00'] * 12 + [i + i for i in data] + ['0'] * 27)
+    tclk = "".join(['00'] * 5 + ['01'] * 7 + ['01' for _ in range(len(data))
+                                      ] + ['01'] * 12 + ['0'])
 
+    high_signal = "1" * len(trstb)
     return [
-        int("".join(i), 2) for i in zip("".join(trstb), "".join(tms), "".join(
-            tdo), "".join(tdi), "".join(tclk))
+        int("".join(i), 2) for i in zip(high_signal, high_signal, high_signal, trstb, tms, tdo, tdi, tclk)
     ]
 
 
 def encode_bitbang_dr(data):
-    trstb = ['11'] * 13 + ['11' for _ in range(len(data) - 1)] + ['1'] * 27
-    tms = ['00'] * 9 + ['11110000'] + ['00' for _ in range(len(data) - 1)
-                                       ] + ["111100000000000000000000000"]
-    tdo = ['00'] * 13 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27
-    tdi = ['00'] * 13 + [i + i for i in data] + ['0'] * 25
-    tclk = ['00'] * 5 + ['01'] * 8 + ['01' for _ in range(len(data))
-                                      ] + ['01'] * 12 + ['0']
+    trstb = "".join(['00'] * 13 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27)
+    tms = "".join(['00'] * 9 + ['11110000'] + ['00' for _ in range(len(data) - 1)
+                                       ] + ["111100000000000000000000000"])
+    tdo = "".join(['00'] * 13 + ['00' for _ in range(len(data) - 1)] + ['0'] * 27)
+    tdi = "".join(['00'] * 13 + [i + i for i in data] + ['0'] * 25)
+    tclk = "".join(['00'] * 5 + ['01'] * 8 + ['01' for _ in range(len(data))
+                                      ] + ['01'] * 12 + ['0'])
 
+    high_signal = "1" * len(trstb)
     return [
-        int("".join(i), 2) for i in zip("".join(trstb), "".join(tms), "".join(
-            tdo), "".join(tdi), "".join(tclk))
+        int("".join(i), 2) for i in zip(high_signal, high_signal, high_signal, trstb, tms, tdo, tdi, tclk)
     ]
 
 
 def select_command(dev, command):
-    jtag_write_read(dev, encode_bitbang_dr(START_COMMAND))
-    jtag_write_read(dev, encode_bitbang_ir(command))
-    jtag_write_read(dev, encode_bitbang_dr(END_COMMAND))
+    jtag_write_read(
+        dev,
+        encode_bitbang_dr(BYPASS_COMMAND *
+                          (NUMBER_OF_DEVICES_IN_CHAIN - DEVICE_NUMBER) +
+                          START_COMMAND + BYPASS_COMMAND *
+                          (DEVICE_NUMBER - 1)))
+    jtag_write_read(
+        dev,
+        encode_bitbang_ir(command + "0" *
+                          (DEVICE_NUMBER - 1)))
+    jtag_write_read(
+        dev,
+        encode_bitbang_dr(BYPASS_COMMAND *
+                          (NUMBER_OF_DEVICES_IN_CHAIN - DEVICE_NUMBER) +
+                          END_COMMAND + BYPASS_COMMAND * (DEVICE_NUMBER - 1)))
 
 
 def decode_bitbang(data):
@@ -81,7 +97,7 @@ def read_back_from_char(dev, voltage_off, phase_off, bit_select, is_r0=True):
 
 def setup_device(dev):
     dev.resetDevice()
-    dev.setBitMode(1 << BITBANG_OUTPUT_BIT, FTDI_BIT_MODE)
+    dev.setBitMode(FTDI_BIT_MASK, FTDI_SYNC_BITBANG_MODE)
     queue_status = dev.getQueueStatus()
     if queue_status > 0:
         dev.read(queue_status)
@@ -92,6 +108,7 @@ def configure_receiver_block(dev, receiver_block):
     jtag_write_read(
         dev,
         encode_bitbang_ir(ws_cfg().to_binary()[::-1] +
+                          "0" * (DEVICE_NUMBER - 1) +
                           ("0" if receiver_block == 1 else "")))
     select_command(dev, COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
@@ -101,7 +118,7 @@ def configure_receiver_block(dev, receiver_block):
                    core_we=True,
                    char_we=True,
                    core_we_tail=True).to_binary()[::-1] +
-            ("0" if receiver_block == 1 else "")))
+            "0" * (DEVICE_NUMBER - 1) + ("0" if receiver_block == 1 else "")))
     select_command(dev, COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
     jtag_write_read(
         dev,
@@ -114,7 +131,7 @@ def configure_receiver_block(dev, receiver_block):
                     eq=1,
                     enoc=True,
                     cfg_ovr=True).to_binary()[::-1] +
-            ("0" if receiver_block == 1 else "")))
+            "0" * (DEVICE_NUMBER - 1) + ("0" if receiver_block == 1 else "")))
 
 
 def readout_receiver_block(dev, bit_number, receiver_block):

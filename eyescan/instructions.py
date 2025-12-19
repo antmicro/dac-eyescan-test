@@ -4,6 +4,7 @@ def prepare_bits(data, length):
 
 START_COMMAND = prepare_bits(0x6D, 8)
 END_COMMAND = prepare_bits(0x9B, 8)
+BYPASS_COMMAND = prepare_bits(0xff, 8)
 COMMANDS = [
     # R0 opcodes
     {
