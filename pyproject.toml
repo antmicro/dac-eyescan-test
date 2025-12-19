@@ -8,7 +8,7 @@ authors = [
     { name = "Antmicro" }
 ]
 description = "Simple utility to connect to DAC38J8x and perform eyescan measurements"
-license = "Apache-2.0"
+license = {file ="LICENSE"}
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
