@@ -93,7 +93,8 @@ def parse_args():
     parser.add_argument('-b', '--bit-number', type=int, default=20, help="how many bits to check")
     return parser.parse_args()
 
-def main(args):
+def main():
+    args = parse_args()
     with ftd2xx.open(args.device) as dev:
         setup_device(dev)
         with open(args.output, 'w') as file:
@@ -103,5 +104,4 @@ def main(args):
                     file.write(f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+    main()
