@@ -83,6 +83,15 @@ def readout_receiver_block(dev, bit_number, receiver_block):
                 for lane, amp in enumerate(amplitudes):
                     yield (lane + 4 * receiver_block, bit_select, voltage, phase, amp)
 
+def perform_eyescan(ftdi_dev, output_path, bit_number):
+    with ftd2xx.open(ftdi_dev) as dev:
+        setup_device(dev)
+        with open(output_path, "w") as file:
+            for receiver_block in range(2):
+                configure_receiver_block(dev, receiver_block)
+                for lane, bit, voltage, phase, amplitude in readout_receiver_block(dev, bit_number, receiver_block):
+                    file.write(f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
+
 def parse_args():
     parser = argparse.ArgumentParser(
                     prog='eyescan',
@@ -95,13 +104,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    with ftd2xx.open(args.device) as dev:
-        setup_device(dev)
-        with open(args.output, 'w') as file:
-            for receiver_block in range(2):
-                configure_receiver_block(dev, receiver_block)
-                for lane, bit, voltage, phase, amplitude in readout_receiver_block(dev, args.bit_number, receiver_block):
-                    file.write(f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
+    perform_eyescan(ftdi_dev=args.device, output_path=args.output, bit_number=args.bit_number)
 
 if __name__ == "__main__":
     main()
