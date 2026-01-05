@@ -1,6 +1,7 @@
 def prepare_bits(data, length):
     return format(data, f'#0{length+2}b')[2:][::-1]
 
+
 START_COMMAND = prepare_bits(0x6D, 8)
 END_COMMAND = prepare_bits(0x9B, 8)
 COMMANDS = [
@@ -22,8 +23,21 @@ COMMANDS = [
 def format_field(value, length):
     return format(value, f'#0{length + 2}b')[-length:][::-1]
 
+
 class ws_char:
-    def __init__(self, phase_offset, bit_select, voltage_offset, testfail=False, ecount=False, esword=False, es=False, voltage_offset_override=False, scan_len=False, scan_run=False, scan_done=False):
+
+    def __init__(self,
+                 phase_offset,
+                 bit_select,
+                 voltage_offset,
+                 testfail=False,
+                 ecount=False,
+                 esword=False,
+                 es=False,
+                 voltage_offset_override=False,
+                 scan_len=False,
+                 scan_run=False,
+                 scan_done=False):
         self.phase_offset = format_field(phase_offset, 1)
         self.bit_select = format_field(bit_select, 12)
         self.voltage_offset = format_field(voltage_offset, 8)
@@ -37,11 +51,25 @@ class ws_char:
         self.scan_done = format_field(scan_done, 1)
 
     def to_binary(self):
-        body = (self.testfail + self.ecount + self.esword + self.es + self.phase_offset + self.bit_select + self.voltage_offset + self.voltage_offset_override + self.scan_len + self.scan_run + self.scan_done) * 4
+        body = (self.testfail + self.ecount + self.esword + self.es +
+                self.phase_offset + self.bit_select + self.voltage_offset +
+                self.voltage_offset_override + self.scan_len + self.scan_run +
+                self.scan_done) * 4
         return "0" + "0" + body + "0"
 
+
 class ws_cfg:
-    def __init__(self, core_we_head=False, core_we=False, tuning_we=False, debug_we=False, char_we=False, unshadowed_we=False, core_we_tail=False, tuning_we_tail=False, debug_we_tail=False):
+
+    def __init__(self,
+                 core_we_head=False,
+                 core_we=False,
+                 tuning_we=False,
+                 debug_we=False,
+                 char_we=False,
+                 unshadowed_we=False,
+                 core_we_tail=False,
+                 tuning_we_tail=False,
+                 debug_we_tail=False):
         self.core_we_head = format_field(core_we_head, 1)
         self.core_we = format_field(core_we, 1)
         self.tuning_we = format_field(tuning_we, 1)
@@ -53,11 +81,54 @@ class ws_cfg:
         self.debug_we_tail = format_field(debug_we_tail, 1)
 
     def to_binary(self):
-        body = (self.core_we + self.tuning_we + self.debug_we + self.char_we + self.unshadowed_we) * 4
+        body = (self.core_we + self.tuning_we + self.debug_we + self.char_we +
+                self.unshadowed_we) * 4
         return "0" + "0" + self.core_we_head + body + self.core_we_tail + self.tuning_we_tail + self.debug_we_tail + "0"
 
+
 class ws_core:
-    def __init__(self, enpll=False, mpy=0, vrange=False, endivclk=False, lb=0, enrx=False, sleeprx=False, buswidth=0, rate=0, invpair=False, term=0, align=0, los=0, cdr=0, eq=0, eqhld=False, enoc=False, loopback=0, bsinrxp=False, bsinrxn=False, testpatt=0, testfail=False, losdtct_rl=False, bsrxp=False, bsrxn=False, ocip=False, eqover=False, equnder=False, losdtct_st=False, sync=False, clkbyp=0, sleeppll=False, lock=False, bsinitclk=False, enbstx=False, enbsrx=False, enbspt=False, nearlock=False, unlock=False, cfg_ovr=False):
+
+    def __init__(self,
+                 enpll=False,
+                 mpy=0,
+                 vrange=False,
+                 endivclk=False,
+                 lb=0,
+                 enrx=False,
+                 sleeprx=False,
+                 buswidth=0,
+                 rate=0,
+                 invpair=False,
+                 term=0,
+                 align=0,
+                 los=0,
+                 cdr=0,
+                 eq=0,
+                 eqhld=False,
+                 enoc=False,
+                 loopback=0,
+                 bsinrxp=False,
+                 bsinrxn=False,
+                 testpatt=0,
+                 testfail=False,
+                 losdtct_rl=False,
+                 bsrxp=False,
+                 bsrxn=False,
+                 ocip=False,
+                 eqover=False,
+                 equnder=False,
+                 losdtct_st=False,
+                 sync=False,
+                 clkbyp=0,
+                 sleeppll=False,
+                 lock=False,
+                 bsinitclk=False,
+                 enbstx=False,
+                 enbsrx=False,
+                 enbspt=False,
+                 nearlock=False,
+                 unlock=False,
+                 cfg_ovr=False):
         self.enpll = format_field(enpll, 1)
         self.mpy = format_field(mpy, 8)
         self.vrange = format_field(vrange, 1)
@@ -103,5 +174,11 @@ class ws_core:
         self.cfg_ovr = format_field(cfg_ovr, 1)
 
     def to_binary(self):
-        body = (self.enrx + self.sleeprx + self.buswidth + self.rate + self.invpair + self.term + self.align + self.los + self.cdr + self.eq + self.eqhld + self.enoc + self.loopback + self.bsinrxp + self.bsinrxn + self.reserved1 + self.testpatt + self.testfail + self.losdtct_rl + self.bsrxp + self.bsrxn + self.ocip + self.eqover + self.equnder + self.losdtct_st + self.sync + "0") * 4
+        body = (self.enrx + self.sleeprx + self.buswidth + self.rate +
+                self.invpair + self.term + self.align + self.los + self.cdr +
+                self.eq + self.eqhld + self.enoc + self.loopback +
+                self.bsinrxp + self.bsinrxn + self.reserved1 + self.testpatt +
+                self.testfail + self.losdtct_rl + self.bsrxp + self.bsrxn +
+                self.ocip + self.eqover + self.equnder + self.losdtct_st +
+                self.sync + "0") * 4
         return "0" + "0" + self.enpll + self.mpy + self.vrange + self.endivclk + self.lb + body + self.clkbyp + self.sleeppll + self.reserved2 + self.lock + self.bsinitclk + self.enbstx + self.enbsrx + self.enbspt + self.reserved3 + self.nearlock + self.unlock + self.cfg_ovr + "0"
