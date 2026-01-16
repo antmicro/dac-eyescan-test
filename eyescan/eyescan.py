@@ -85,15 +85,16 @@ def decode_bitbang(data):
 
 def read_back_from_char(dev, voltage_off, phase_off, bit_select, is_r0=True):
     bits = ws_char(phase_off, bit_select, voltage_off, es=0b0001, esword=255, voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = encode_bitbang_ir(bits + ("" if is_r0 else "0"))
+    encoded_data = encode_bitbang_ir(bits + "0" * (DEVICE_NUMBER - 1) + ("" if is_r0 else "0"))
     readback = jtag_write_read(dev, encoded_data)
-    readback_decoded = decode_bitbang(
-        readback)[BITBANG_OUTPUT_BIT][27 if is_r0 else 25:][::2][:194][::-1]
-    return int(readback_decoded[2:14],
-               2), int(readback_decoded[50:62],
-                       2), int(readback_decoded[98:110],
-                               2), int(readback_decoded[146:158], 2)
-
+    TMS_BIT = 3
+    readback_decoded = decode_bitbang(readback)
+    readback_decoded = readback_decoded[-BITBANG_OUTPUT_BIT - 1][readback_decoded[-TMS_BIT - 1].index("11") + 6:readback_decoded[-TMS_BIT - 1].index("1111") + 2]
+    readback_decoded = readback_decoded[::2][DEVICE_NUMBER-1:][::-1]
+    return int(readback_decoded[2:14][::-1],
+               2), int(readback_decoded[50:62][::-1],
+                       2), int(readback_decoded[98:110][::-1],
+                               2), int(readback_decoded[146:158][::-1], 2)
 
 def setup_device(dev):
     dev.resetDevice()
