@@ -84,7 +84,7 @@ def decode_bitbang(data):
 
 
 def read_back_from_char(dev, voltage_off, phase_off, bit_select, is_r0=True):
-    bits = ws_char(phase_off, bit_select, voltage_off).to_binary()[::-1]
+    bits = ws_char(phase_off, bit_select, voltage_off, es=0b0001, esword=255, voltage_offset_override=True).to_binary()[::-1]
     encoded_data = encode_bitbang_ir(bits + ("" if is_r0 else "0"))
     readback = jtag_write_read(dev, encoded_data)
     readback_decoded = decode_bitbang(
@@ -130,7 +130,8 @@ def configure_receiver_block(dev, receiver_block):
                     term=1,
                     eq=1,
                     enoc=True,
-                    cfg_ovr=True).to_binary()[::-1] +
+                    cfg_ovr=True,
+                    testpatt=0b010).to_binary()[::-1] +
             "0" * (DEVICE_NUMBER - 1) + ("0" if receiver_block == 1 else "")))
 
 

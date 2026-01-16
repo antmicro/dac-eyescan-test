@@ -32,11 +32,11 @@ class ws_char:
                  bit_select,
                  voltage_offset,
                  testfail=False,
-                 ecount=False,
-                 esword=False,
-                 es=False,
+                 ecount=0,
+                 esword=0,
+                 es=0,
                  voltage_offset_override=False,
-                 scan_len=False,
+                 scan_len=0,
                  scan_run=False,
                  scan_done=False):
         self.phase_offset = format_field(phase_offset, 7)
