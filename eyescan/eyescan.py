@@ -17,11 +17,7 @@ from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, w
 # ws_char 0x33 Char. Fields used for eye scan.
 
 FTDI_SYNC_BITBANG_MODE = 0x04
-FTDI_BIT_MASK = 0x308b
 BITBANG_OUTPUT_BIT = 2
-
-DEVICE_NUMBER = 18
-NUMBER_OF_DEVICES_IN_CHAIN = 18
 
 
 def jtag_write_read(dev, data):
@@ -58,23 +54,22 @@ def encode_bitbang_dr(data):
         int("".join(i), 2) for i in zip(high_signal, high_signal, high_signal, trstb, tms, tdo, tdi, tclk)
     ]
 
-
-def select_command(dev, command):
+def select_command(dev, daisy_chain_device_number, daisy_chain_device_count, command):
     jtag_write_read(
         dev,
         encode_bitbang_dr(BYPASS_COMMAND *
-                          (NUMBER_OF_DEVICES_IN_CHAIN - DEVICE_NUMBER) +
+                          (daisy_chain_device_count - daisy_chain_device_number) +
                           START_COMMAND + BYPASS_COMMAND *
-                          (DEVICE_NUMBER - 1)))
+                          (daisy_chain_device_number - 1)))
     jtag_write_read(
         dev,
         encode_bitbang_ir(command + "0" *
-                          (DEVICE_NUMBER - 1)))
+                          (daisy_chain_device_number - 1)))
     jtag_write_read(
         dev,
         encode_bitbang_dr(BYPASS_COMMAND *
-                          (NUMBER_OF_DEVICES_IN_CHAIN - DEVICE_NUMBER) +
-                          END_COMMAND + BYPASS_COMMAND * (DEVICE_NUMBER - 1)))
+                          (daisy_chain_device_count - daisy_chain_device_number) +
+                          END_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
 
 
 def decode_bitbang(data):
@@ -83,35 +78,35 @@ def decode_bitbang(data):
     return decoded_data
 
 
-def read_back_from_char(dev, voltage_off, phase_off, bit_select, is_r0=True):
+def read_back_from_char(dev, daisy_chain_device_number, voltage_off, phase_off, bit_select, is_r0=True):
     bits = ws_char(phase_off, bit_select, voltage_off, es=0b0001, esword=255, voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = encode_bitbang_ir(bits + "0" * (DEVICE_NUMBER - 1) + ("" if is_r0 else "0"))
+    encoded_data = encode_bitbang_ir(bits + "0" * (daisy_chain_device_number - 1) + ("" if is_r0 else "0"))
     readback = jtag_write_read(dev, encoded_data)
     TMS_BIT = 3
     readback_decoded = decode_bitbang(readback)
     readback_decoded = readback_decoded[-BITBANG_OUTPUT_BIT - 1][readback_decoded[-TMS_BIT - 1].index("11") + 6:readback_decoded[-TMS_BIT - 1].index("1111") + 2]
-    readback_decoded = readback_decoded[::2][DEVICE_NUMBER-1:][::-1]
+    readback_decoded = readback_decoded[::2][daisy_chain_device_number-1:][::-1]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
                                2), int(readback_decoded[146:158][::-1], 2)
 
-def setup_device(dev):
+def setup_device(dev, ftdi_bitmask):
     dev.resetDevice()
-    dev.setBitMode(FTDI_BIT_MASK, FTDI_SYNC_BITBANG_MODE)
+    dev.setBitMode(ftdi_bitmask, FTDI_SYNC_BITBANG_MODE)
     queue_status = dev.getQueueStatus()
     if queue_status > 0:
         dev.read(queue_status)
 
 
-def configure_receiver_block(dev, receiver_block):
-    select_command(dev, COMMANDS[receiver_block]["SELECT_CFG"])
+def configure_receiver_block(dev, daisy_chain_device_number, daisy_chain_device_count, receiver_block):
+    select_command(dev, daisy_chain_device_number, daisy_chain_device_count, COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
         dev,
         encode_bitbang_ir(ws_cfg().to_binary()[::-1] +
-                          "0" * (DEVICE_NUMBER - 1) +
+                          "0" * (daisy_chain_device_number - 1) +
                           ("0" if receiver_block == 1 else "")))
-    select_command(dev, COMMANDS[receiver_block]["SELECT_CFG"])
+    select_command(dev, daisy_chain_device_number, daisy_chain_device_count, COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
         dev,
         encode_bitbang_ir(
@@ -119,8 +114,8 @@ def configure_receiver_block(dev, receiver_block):
                    core_we=True,
                    char_we=True,
                    core_we_tail=True).to_binary()[::-1] +
-            "0" * (DEVICE_NUMBER - 1) + ("0" if receiver_block == 1 else "")))
-    select_command(dev, COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
+            "0" * (daisy_chain_device_number - 1) + ("0" if receiver_block == 1 else "")))
+    select_command(dev, daisy_chain_device_number, daisy_chain_device_count, COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
     jtag_write_read(
         dev,
         encode_bitbang_ir(
@@ -133,17 +128,17 @@ def configure_receiver_block(dev, receiver_block):
                     enoc=True,
                     cfg_ovr=True,
                     testpatt=0b010).to_binary()[::-1] +
-            "0" * (DEVICE_NUMBER - 1) + ("0" if receiver_block == 1 else "")))
+            "0" * (daisy_chain_device_number - 1) + ("0" if receiver_block == 1 else "")))
 
 
-def readout_receiver_block(dev, bit_number, receiver_block):
+def readout_receiver_block(dev, daisy_chain_device_number, daisy_chain_device_count, bit_number, receiver_block):
     for voltage in range(31, -33, -1):
         for bit_select in range(bit_number):
-            select_command(dev, COMMANDS[receiver_block]["SELECT_READBACK"])
-            read_back_from_char(dev, voltage & 0xff, 0, bit_select,
+            select_command(dev, daisy_chain_device_number, daisy_chain_device_count, COMMANDS[receiver_block]["SELECT_READBACK"])
+            read_back_from_char(dev, daisy_chain_device_number, voltage & 0xff, 0, bit_select,
                                 receiver_block == 0)
             for phase in range(15, -17, -1):
-                amplitudes = read_back_from_char(dev, voltage & 0xff,
+                amplitudes = read_back_from_char(dev, daisy_chain_device_number, voltage & 0xff,
                                                  phase & 0xff, bit_select,
                                                  receiver_block == 0)
                 for lane, amp in enumerate(amplitudes):
@@ -151,14 +146,14 @@ def readout_receiver_block(dev, bit_number, receiver_block):
                            phase, amp)
 
 
-def perform_eyescan(ftdi_dev, output_path, bit_number):
+def perform_eyescan(ftdi_dev, ftdi_bitmask, daisy_chain_device_number, daisy_chain_device_count, output_path, bit_number):
     with ftd2xx.open(ftdi_dev) as dev:
-        setup_device(dev)
+        setup_device(dev, ftdi_bitmask)
         with open(output_path, "w") as file:
             for receiver_block in range(2):
-                configure_receiver_block(dev, receiver_block)
+                configure_receiver_block(dev, daisy_chain_device_number, daisy_chain_device_count, receiver_block)
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
-                        dev, bit_number, receiver_block):
+                        dev, daisy_chain_device_number, daisy_chain_device_count, bit_number, receiver_block):
                     file.write(
                         f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
 
@@ -185,12 +180,30 @@ def parse_args():
                         type=int,
                         default=20,
                         help="how many bits to check")
+    parser.add_argument('-m',
+                        '--ftdi-bitmask',
+                        type=lambda x: int(x, 0),
+                        default=0b1000_1011,
+                        help="FTDI bitmask")
+    parser.add_argument('-c',
+                        '--daisy-chain-count',
+                        type=int,
+                        default=1,
+                        help="how many devices in JTAG daisy-chain")
+    parser.add_argument('-n',
+                        '--daisy-chain-number',
+                        type=int,
+                        default=1,
+                        help="which device from JTAG daisy-chain to read")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     perform_eyescan(ftdi_dev=args.device,
+                    ftdi_bitmask=args.ftdi_bitmask,
+                    daisy_chain_device_number = args.daisy_chain_number,
+                    daisy_chain_device_count = args.daisy_chain_count,
                     output_path=args.output,
                     bit_number=args.bit_number)
 
