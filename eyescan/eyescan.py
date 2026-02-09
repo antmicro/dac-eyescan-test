@@ -1,7 +1,7 @@
 import ftd2xx
 import argparse
 import pathlib
-from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, ws_char, ws_cfg, ws_core
+from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, ws_char, ws_cfg, ws_core, TestPattern
 
 # See https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/73/2625.DAC38J84-RX-Tests-_2D00_-Version-1p1.pdf
 
@@ -128,7 +128,8 @@ def setup_device(dev, ftdi_bitmask, ftdi_baudrate):
 
 
 def configure_receiver_block(dev, daisy_chain_device_number,
-                             daisy_chain_device_count, receiver_block):
+                             daisy_chain_device_count, receiver_block,
+                             test_pattern):
     select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
@@ -160,7 +161,7 @@ def configure_receiver_block(dev, daisy_chain_device_number,
                     eq=1,
                     enoc=True,
                     cfg_ovr=True,
-                    testpatt=0b010).to_binary()[::-1] + "0" *
+                    testpatt=test_pattern).to_binary()[::-1] + "0" *
             (daisy_chain_device_number - 1) +
             ("0" if receiver_block == 1 else "")))
 
@@ -186,15 +187,16 @@ def readout_receiver_block(dev, daisy_chain_device_number,
                            phase, amp)
 
 
-def perform_eyescan(ftdi_dev, ftdi_bitmask, ftdi_baudrate, daisy_chain_device_number,
-                    daisy_chain_device_count, output_path, bit_number):
+def perform_eyescan(ftdi_dev, ftdi_bitmask, ftdi_baudrate,
+                    daisy_chain_device_number, daisy_chain_device_count,
+                    output_path, bit_number, test_pattern):
     with ftd2xx.open(ftdi_dev) as dev:
         setup_device(dev, ftdi_bitmask, ftdi_baudrate)
         with open(output_path, "w") as file:
             for receiver_block in range(2):
                 configure_receiver_block(dev, daisy_chain_device_number,
                                          daisy_chain_device_count,
-                                         receiver_block)
+                                         receiver_block, test_pattern)
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
                         dev, daisy_chain_device_number,
                         daisy_chain_device_count, bit_number, receiver_block):
@@ -244,6 +246,22 @@ def parse_args():
                         type=int,
                         default=1,
                         help="which device from JTAG daisy-chain to read")
+
+    def parse_test_pattern(pattern):
+        try:
+            return TestPattern[pattern]
+        except KeyError:
+            raise argparse.ArgumentTypeError(
+                f"{pattern} is not a valid test pattern ({[str(i) for i in TestPattern]})"
+            )
+
+    parser.add_argument('-p',
+                        '--test-pattern',
+                        type=parse_test_pattern,
+                        choices=list(TestPattern),
+                        default=TestPattern.PRBS_7_BIT,
+                        help="eyescan test pattern")
+
     return parser.parse_args()
 
 
@@ -255,7 +273,8 @@ def main():
                     daisy_chain_device_number=args.daisy_chain_number,
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
-                    bit_number=args.bit_number)
+                    bit_number=args.bit_number,
+                    test_pattern=args.test_pattern)
 
 
 if __name__ == "__main__":

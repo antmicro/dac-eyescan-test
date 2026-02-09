@@ -1,3 +1,6 @@
+from enum import Enum
+
+
 def prepare_bits(data, length):
     return format(data, f'#0{length+2}b')[2:][::-1]
 
@@ -87,6 +90,18 @@ class ws_cfg:
         return "0" + "0" + self.core_we_head + body + self.core_we_tail + self.tuning_we_tail + self.debug_we_tail + "0"
 
 
+class TestPattern(Enum):
+    DISABLED = 0b000
+    ALTERNATING_0_1 = 0b001
+    PRBS_7_BIT = 0b010
+    PRBS_23_BIT = 0b011
+    PRBS_31_BIT = 0b100
+    USER_DEFINED = 0b101
+
+    def __str__(self):
+        return self.name
+
+
 class ws_core:
 
     def __init__(self,
@@ -110,7 +125,7 @@ class ws_core:
                  loopback=0,
                  bsinrxp=False,
                  bsinrxn=False,
-                 testpatt=0,
+                 testpatt=TestPattern.DISABLED,
                  testfail=False,
                  losdtct_rl=False,
                  bsrxp=False,
@@ -151,7 +166,7 @@ class ws_core:
         self.bsinrxp = format_field(bsinrxp, 1)
         self.bsinrxn = format_field(bsinrxn, 1)
         self.reserved1 = format_field(False, 1)
-        self.testpatt = format_field(testpatt, 3)
+        self.testpatt = format_field(testpatt.value, 3)
         self.testfail = format_field(testfail, 1)
         self.losdtct_rl = format_field(losdtct_rl, 1)
         self.bsrxp = format_field(bsrxp, 1)
