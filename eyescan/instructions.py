@@ -131,7 +131,7 @@ class ws_core:
                  unlock=False,
                  cfg_ovr=False):
         self.enpll = format_field(enpll, 1)
-        self.mpy = format_field(mpy, 8)
+        self.mpy = format_field(int(mpy * 4), 8)
         self.vrange = format_field(vrange, 1)
         self.endivclk = format_field(endivclk, 1)
         self.lb = format_field(lb, 2)

@@ -152,7 +152,7 @@ def configure_receiver_block(dev, daisy_chain_device_number,
         dev,
         encode_bitbang_ir(
             ws_core(enpll=True,
-                    mpy=20,
+                    mpy=5,
                     enrx=True,
                     buswidth=2,
                     term=1,
