@@ -111,16 +111,17 @@ def read_back_from_char(dev,
         1][readback_decoded[-TMS_BIT - 1].index("11") +
            6:readback_decoded[-TMS_BIT - 1].index("1111") + 2]
     readback_decoded = readback_decoded[::2][daisy_chain_device_number -
-                                             1:][::-1]
+                                        1:][::-1][0 if is_r0 else 2:]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
                                2), int(readback_decoded[146:158][::-1], 2)
 
 
-def setup_device(dev, ftdi_bitmask):
+def setup_device(dev, ftdi_bitmask, ftdi_baudrate):
     dev.resetDevice()
     dev.setBitMode(ftdi_bitmask, FTDI_SYNC_BITBANG_MODE)
+    dev.setBaudRate(ftdi_baudrate)
     queue_status = dev.getQueueStatus()
     if queue_status > 0:
         dev.read(queue_status)
@@ -185,10 +186,10 @@ def readout_receiver_block(dev, daisy_chain_device_number,
                            phase, amp)
 
 
-def perform_eyescan(ftdi_dev, ftdi_bitmask, daisy_chain_device_number,
+def perform_eyescan(ftdi_dev, ftdi_bitmask, ftdi_baudrate, daisy_chain_device_number,
                     daisy_chain_device_count, output_path, bit_number):
     with ftd2xx.open(ftdi_dev) as dev:
-        setup_device(dev, ftdi_bitmask)
+        setup_device(dev, ftdi_bitmask, ftdi_baudrate)
         with open(output_path, "w") as file:
             for receiver_block in range(2):
                 configure_receiver_block(dev, daisy_chain_device_number,
@@ -228,6 +229,11 @@ def parse_args():
                         type=lambda x: int(x, 0),
                         default=0b1000_1011,
                         help="FTDI bitmask")
+    parser.add_argument('-r',
+                        '--ftdi-baudrate',
+                        type=int,
+                        default=115200,
+                        help="FTDI baudrate")
     parser.add_argument('-c',
                         '--daisy-chain-count',
                         type=int,
@@ -245,6 +251,7 @@ def main():
     args = parse_args()
     perform_eyescan(ftdi_dev=args.device,
                     ftdi_bitmask=args.ftdi_bitmask,
+                    ftdi_baudrate=args.ftdi_baudrate,
                     daisy_chain_device_number=args.daisy_chain_number,
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
