@@ -110,8 +110,8 @@ def read_back_from_char(dev,
         -BITBANG_OUTPUT_BIT -
         1][readback_decoded[-TMS_BIT - 1].index("11") +
            6:readback_decoded[-TMS_BIT - 1].index("1111") + 2]
-    readback_decoded = readback_decoded[::2][daisy_chain_device_number -
-                                        1:][::-1][0 if is_r0 else 2:]
+    readback_decoded = readback_decoded[::2][::-1][daisy_chain_device_number -
+                                                   1:][0 if is_r0 else 2:]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
