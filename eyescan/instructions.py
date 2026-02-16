@@ -8,6 +8,10 @@ def prepare_bits(data, length):
 START_COMMAND = prepare_bits(0x6D, 8)
 END_COMMAND = prepare_bits(0x9B, 8)
 BYPASS_COMMAND = prepare_bits(0xff, 8)
+# Reset state after writing to IEEE 1500 IR
+# This instruction was found by scanning all possible instructions
+# and is necessary for daisy-chain to work
+RESET_STATE_COMMAND = prepare_bits(0xBE, 8)
 COMMANDS = [
     # R0 opcodes
     {

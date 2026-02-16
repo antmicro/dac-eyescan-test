@@ -1,7 +1,7 @@
 import ftd2xx
 import argparse
 import pathlib
-from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, ws_char, ws_cfg, ws_core, TestPattern
+from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, TestPattern
 
 # See https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/73/2625.DAC38J84-RX-Tests-_2D00_-Version-1p1.pdf
 
@@ -79,6 +79,13 @@ def select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
         encode_bitbang_ir(
             BYPASS_COMMAND *
             (daisy_chain_device_count - daisy_chain_device_number) +
+            RESET_STATE_COMMAND + BYPASS_COMMAND *
+            (daisy_chain_device_number - 1)))
+    jtag_write_read(
+        dev,
+        encode_bitbang_ir(
+            BYPASS_COMMAND *
+            (daisy_chain_device_count - daisy_chain_device_number) +
             END_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
 
 
@@ -90,6 +97,7 @@ def decode_bitbang(data):
 
 def read_back_from_char(dev,
                         daisy_chain_device_number,
+                        daisy_chain_device_count,
                         voltage_off,
                         phase_off,
                         bit_select,
@@ -100,9 +108,9 @@ def read_back_from_char(dev,
                    es=0b0001,
                    esword=255,
                    voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = encode_bitbang_dr(bits + "0" *
-                                     (daisy_chain_device_number - 1) +
-                                     ("" if is_r0 else "0"))
+    encoded_data = encode_bitbang_dr(
+        "0" * (daisy_chain_device_count - daisy_chain_device_number) + bits +
+        "0" * (daisy_chain_device_number - 1) + ("" if is_r0 else "0"))
     readback = jtag_write_read(dev, encoded_data)
     TMS_BIT = 3
     readback_decoded = decode_bitbang(readback)
@@ -174,11 +182,13 @@ def readout_receiver_block(dev, daisy_chain_device_number,
             select_command(dev, daisy_chain_device_number,
                            daisy_chain_device_count,
                            COMMANDS[receiver_block]["SELECT_READBACK"])
-            read_back_from_char(dev, daisy_chain_device_number, voltage & 0xff,
-                                0, bit_select, receiver_block == 0)
+            read_back_from_char(dev, daisy_chain_device_number,
+                                daisy_chain_device_count, voltage & 0xff, 0,
+                                bit_select, receiver_block == 0)
             for phase in range(15, -17, -1):
                 amplitudes = read_back_from_char(dev,
                                                  daisy_chain_device_number,
+                                                 daisy_chain_device_count,
                                                  voltage & 0xff, phase & 0xff,
                                                  bit_select,
                                                  receiver_block == 0)
