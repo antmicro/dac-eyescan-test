@@ -25,7 +25,7 @@ def jtag_write_read(dev, data):
     return dev.read(c)
 
 
-def encode_bitbang_ir(data):
+def encode_bitbang_dr(data):
     trstb = "".join(['00'] * 12 + ['00'
                                    for _ in range(len(data) - 1)] + ['0'] * 27)
     tms = "".join(['00'] * 9 + ['1100'] + ['00'
@@ -44,7 +44,7 @@ def encode_bitbang_ir(data):
     ]
 
 
-def encode_bitbang_dr(data):
+def encode_bitbang_ir(data):
     trstb = "".join(['00'] * 13 + ['00'
                                    for _ in range(len(data) - 1)] + ['0'] * 27)
     tms = "".join(['00'] * 9 + ['11110000'] +
@@ -67,16 +67,16 @@ def select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
                    command):
     jtag_write_read(
         dev,
-        encode_bitbang_dr(
+        encode_bitbang_ir(
             BYPASS_COMMAND *
             (daisy_chain_device_count - daisy_chain_device_number) +
             START_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
     jtag_write_read(
         dev,
-        encode_bitbang_ir(command + "0" * (daisy_chain_device_number - 1)))
+        encode_bitbang_dr(command + "0" * (daisy_chain_device_number - 1)))
     jtag_write_read(
         dev,
-        encode_bitbang_dr(
+        encode_bitbang_ir(
             BYPASS_COMMAND *
             (daisy_chain_device_count - daisy_chain_device_number) +
             END_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
@@ -100,7 +100,7 @@ def read_back_from_char(dev,
                    es=0b0001,
                    esword=255,
                    voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = encode_bitbang_ir(bits + "0" *
+    encoded_data = encode_bitbang_dr(bits + "0" *
                                      (daisy_chain_device_number - 1) +
                                      ("" if is_r0 else "0"))
     readback = jtag_write_read(dev, encoded_data)
@@ -134,14 +134,14 @@ def configure_receiver_block(dev, daisy_chain_device_number,
                    COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
         dev,
-        encode_bitbang_ir(ws_cfg().to_binary()[::-1] + "0" *
+        encode_bitbang_dr(ws_cfg().to_binary()[::-1] + "0" *
                           (daisy_chain_device_number - 1) +
                           ("0" if receiver_block == 1 else "")))
     select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
     jtag_write_read(
         dev,
-        encode_bitbang_ir(
+        encode_bitbang_dr(
             ws_cfg(core_we_head=True,
                    core_we=True,
                    char_we=True,
@@ -152,7 +152,7 @@ def configure_receiver_block(dev, daisy_chain_device_number,
                    COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
     jtag_write_read(
         dev,
-        encode_bitbang_ir(
+        encode_bitbang_dr(
             ws_core(enpll=True,
                     mpy=5,
                     enrx=True,
