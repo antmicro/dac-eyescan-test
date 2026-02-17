@@ -1,7 +1,7 @@
 import ftd2xx
 import argparse
 import pathlib
-from instructions import START_COMMAND, END_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, TestPattern
+from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, TestPattern
 
 # See https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/73/2625.DAC38J84-RX-Tests-_2D00_-Version-1p1.pdf
 
@@ -70,7 +70,8 @@ def select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
         encode_bitbang_ir(
             BYPASS_COMMAND *
             (daisy_chain_device_count - daisy_chain_device_number) +
-            START_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
+            IEEE_1500_IR_COMMAND + BYPASS_COMMAND *
+            (daisy_chain_device_number - 1)))
     jtag_write_read(
         dev,
         encode_bitbang_dr(command + "0" * (daisy_chain_device_number - 1)))
@@ -86,7 +87,8 @@ def select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
         encode_bitbang_ir(
             BYPASS_COMMAND *
             (daisy_chain_device_count - daisy_chain_device_number) +
-            END_COMMAND + BYPASS_COMMAND * (daisy_chain_device_number - 1)))
+            IEEE_1500_DR_COMMAND + BYPASS_COMMAND *
+            (daisy_chain_device_number - 1)))
 
 
 def decode_bitbang(data):

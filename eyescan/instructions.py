@@ -5,8 +5,8 @@ def prepare_bits(data, length):
     return format(data, f'#0{length+2}b')[2:][::-1]
 
 
-START_COMMAND = prepare_bits(0x6D, 8)
-END_COMMAND = prepare_bits(0x9B, 8)
+IEEE_1500_IR_COMMAND = prepare_bits(0x6D, 8)
+IEEE_1500_DR_COMMAND = prepare_bits(0x9B, 8)
 BYPASS_COMMAND = prepare_bits(0xff, 8)
 # Reset state after writing to IEEE 1500 IR
 # This instruction was found by scanning all possible instructions
