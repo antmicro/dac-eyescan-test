@@ -17,8 +17,6 @@ from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMM
 # ws_unshadowed 0x34 Unshadowed. Fields for silicon characterization.
 # ws_char 0x33 Char. Fields used for eye scan.
 
-JTAG_CLK_FREQ = 1E5
-
 
 def write_ir(data: str, jtag: JtagEngine, daisy_chain_device_number: int,
              daisy_chain_device_count: int):
@@ -137,12 +135,13 @@ def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                            phase, amp)
 
 
-def perform_eyescan(pyftdi_url: str, daisy_chain_device_number: int,
+def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
+                    daisy_chain_device_number: int,
                     daisy_chain_device_count: int,
                     output_path: str | pathlib.Path, bit_number: int,
                     test_pattern: TestPattern):
     try:
-        jtag = JtagEngine(frequency=JTAG_CLK_FREQ)
+        jtag = JtagEngine(frequency=ftdi_jtag_frequency)
         jtag.configure(pyftdi_url)
         jtag.reset(hw_reset=True, tap_reset=True)
         with open(output_path, "w") as file:
@@ -187,6 +186,11 @@ def parse_args():
                         type=int,
                         default=1,
                         help="which device from JTAG daisy-chain to read")
+    parser.add_argument('-f',
+                        '--ftdi-jtag-frequency',
+                        type=float,
+                        default=1E5,
+                        help="frequency of JTAG clk")
     parser.add_argument('-u',
                         '--pyftdi-url',
                         type=str,
@@ -214,6 +218,7 @@ def parse_args():
 def main():
     args = parse_args()
     perform_eyescan(pyftdi_url=args.pyftdi_url,
+                    ftdi_jtag_frequency=args.ftdi_jtag_frequency,
                     daisy_chain_device_number=args.daisy_chain_number,
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
