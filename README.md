@@ -29,3 +29,17 @@ pip install -r requirements.txt
 ```bash
 python eyescan.py
 ```
+
+### List available FTDI interfaces
+
+By default, the script picks the first available FTDI interface.
+`--pyftdi-url` can be used to select a specific FTDI interface.
+To list all available interfaces, run the following command in the active virtual environment:
+
+```sh
+(.venv) $ ftdi_urls.py
+Available interfaces:
+    ftdi://ftdi:232h:210299BF3425/1  (Digilent USB Device)
+```
+
+You can then pass the preferred url to `--pyftdi-url`.
