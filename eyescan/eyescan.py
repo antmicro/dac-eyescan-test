@@ -20,29 +20,45 @@ from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMM
 JTAG_CLK_FREQ = 1E5
 
 
+def write_ir(data: str, jtag: JtagEngine, daisy_chain_device_number: int,
+             daisy_chain_device_count: int):
+    jtag.write_ir(
+        BitSequence(BYPASS_COMMAND *
+                    (daisy_chain_device_count - daisy_chain_device_number) +
+                    data + BYPASS_COMMAND * (daisy_chain_device_number - 1),
+                    msb=False))
+
+
+def write_dr(data: str, jtag: JtagEngine, daisy_chain_device_number: int,
+             daisy_chain_device_count: int):
+    jtag.write_dr(
+        BitSequence(data + "0" * (daisy_chain_device_number - 1), msb=False))
+
+
+def shift_dr(data: str, jtag: JtagEngine, daisy_chain_device_number: int,
+             daisy_chain_device_count: int) -> str:
+    encoded_data = BitSequence(
+        "0" * (daisy_chain_device_count - daisy_chain_device_number) + data +
+        "0" * (daisy_chain_device_number - 1),
+        msb=False)
+    jtag.change_state('shift_dr')
+    readback = jtag.shift_and_update_register(encoded_data)
+    jtag.go_idle()
+    readback = str(readback).replace(" ", "")
+    readback = readback.split(":")[1]
+    return readback
+
+
 def select_command(jtag: JtagEngine, daisy_chain_device_number: int,
                    daisy_chain_device_count: int, command: str):
-    jtag.write_ir(
-        BitSequence(BYPASS_COMMAND *
-                    (daisy_chain_device_count - daisy_chain_device_number) +
-                    IEEE_1500_IR_COMMAND + BYPASS_COMMAND *
-                    (daisy_chain_device_number - 1),
-                    msb=False))
-    jtag.write_dr(
-        BitSequence(command + "0" * (daisy_chain_device_number - 1),
-                    msb=False))
-    jtag.write_ir(
-        BitSequence(BYPASS_COMMAND *
-                    (daisy_chain_device_count - daisy_chain_device_number) +
-                    RESET_STATE_COMMAND + BYPASS_COMMAND *
-                    (daisy_chain_device_number - 1),
-                    msb=False))
-    jtag.write_ir(
-        BitSequence(BYPASS_COMMAND *
-                    (daisy_chain_device_count - daisy_chain_device_number) +
-                    IEEE_1500_DR_COMMAND + BYPASS_COMMAND *
-                    (daisy_chain_device_number - 1),
-                    msb=False))
+    write_ir(IEEE_1500_IR_COMMAND, jtag, daisy_chain_device_number,
+             daisy_chain_device_count)
+    write_dr(command, jtag, daisy_chain_device_number,
+             daisy_chain_device_count)
+    write_ir(RESET_STATE_COMMAND, jtag, daisy_chain_device_number,
+             daisy_chain_device_count)
+    write_ir(IEEE_1500_DR_COMMAND, jtag, daisy_chain_device_number,
+             daisy_chain_device_count)
 
 
 def read_back_from_char(jtag: JtagEngine,
@@ -57,18 +73,12 @@ def read_back_from_char(jtag: JtagEngine,
                    voltage_off,
                    es=0b0001,
                    esword=255,
-                   voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = BitSequence(
-        "0" * (daisy_chain_device_count - daisy_chain_device_number) + bits +
-        "0" * (daisy_chain_device_number - 1) + ("" if is_r0 else "0"),
-        msb=False)
-    jtag.change_state('shift_dr')
-    readback = jtag.shift_and_update_register(encoded_data)
-    jtag.go_idle()
-    readback_decoded = str(readback).replace(" ", "")
-    readback_decoded = readback_decoded.split(":")[1]
-    readback_decoded = readback_decoded[::-1][daisy_chain_device_number -
-                                              1:][::-1][0 if is_r0 else 2:]
+                   voltage_offset_override=True).to_binary()[::-1] + (
+                       "" if is_r0 else "0")
+    readback = shift_dr(bits, jtag, daisy_chain_device_number,
+                        daisy_chain_device_count)
+    readback_decoded = readback[::-1][daisy_chain_device_number -
+                                      1:][::-1][0 if is_r0 else 2:]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
@@ -80,35 +90,28 @@ def configure_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                              receiver_block: int, test_pattern: TestPattern):
     select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
-    jtag.write_dr(
-        BitSequence(ws_cfg().to_binary()[::-1] + "0" *
-                    (daisy_chain_device_number - 1) +
-                    ("0" if receiver_block == 1 else ""),
-                    msb=False))
+    bits = ws_cfg().to_binary()[::-1] + ("0" if receiver_block == 1 else "")
+    write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
     select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
-    jtag.write_dr(
-        BitSequence(ws_cfg(
-            core_we_head=True, core_we=True, char_we=True,
-            core_we_tail=True).to_binary()[::-1] + "0" *
-                    (daisy_chain_device_number - 1) +
-                    ("0" if receiver_block == 1 else ""),
-                    msb=False))
+    bits = ws_cfg(
+        core_we_head=True, core_we=True, char_we=True,
+        core_we_tail=True).to_binary()[::-1] + ("0"
+                                                if receiver_block == 1 else "")
+    write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
     select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
-    jtag.write_dr(
-        BitSequence(ws_core(enpll=True,
-                            mpy=5,
-                            enrx=True,
-                            buswidth=2,
-                            term=1,
-                            eq=1,
-                            enoc=True,
-                            cfg_ovr=True,
-                            testpatt=test_pattern).to_binary()[::-1] + "0" *
-                    (daisy_chain_device_number - 1) +
-                    ("0" if receiver_block == 1 else ""),
-                    msb=False))
+    bits = ws_core(enpll=True,
+                   mpy=5,
+                   enrx=True,
+                   buswidth=2,
+                   term=1,
+                   eq=1,
+                   enoc=True,
+                   cfg_ovr=True,
+                   testpatt=test_pattern).to_binary()[::-1] + (
+                       "0" if receiver_block == 1 else "")
+    write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
 
 
 def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
