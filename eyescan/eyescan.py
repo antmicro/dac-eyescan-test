@@ -136,12 +136,16 @@ def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
 
 
 def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
-                    daisy_chain_device_number: int,
+                    ftdi_direction: int, ftdi_initial_value: int,
+                    ftdi_reset_bit: int, daisy_chain_device_number: int,
                     daisy_chain_device_count: int,
                     output_path: str | pathlib.Path, bit_number: int,
                     test_pattern: TestPattern):
     try:
-        jtag = JtagEngine(frequency=ftdi_jtag_frequency)
+        jtag = JtagEngine(frequency=ftdi_jtag_frequency,
+                          direction=ftdi_direction,
+                          initial=ftdi_initial_value,
+                          rst_bit=ftdi_reset_bit)
         jtag.configure(pyftdi_url)
         jtag.reset(hw_reset=True, tap_reset=True)
         with open(output_path, "w") as file:
@@ -191,6 +195,21 @@ def parse_args():
                         type=float,
                         default=1E5,
                         help="frequency of JTAG clk")
+    parser.add_argument('-d',
+                        '--ftdi-direction',
+                        type=lambda x: int(x, 0),
+                        default=0x308B,
+                        help="initial direction of GPIO pins")
+    parser.add_argument('-v',
+                        '--ftdi-initial-value',
+                        type=lambda x: int(x, 0),
+                        default=0x2088,
+                        help="initial value of GPIO pins")
+    parser.add_argument('-r',
+                        '--ftdi-reset-bit',
+                        type=lambda x: int(x, 0),
+                        default=0x2000,
+                        help="GPIO reset pin bitmask")
     parser.add_argument('-u',
                         '--pyftdi-url',
                         type=str,
@@ -219,6 +238,9 @@ def main():
     args = parse_args()
     perform_eyescan(pyftdi_url=args.pyftdi_url,
                     ftdi_jtag_frequency=args.ftdi_jtag_frequency,
+                    ftdi_direction=args.ftdi_direction,
+                    ftdi_initial_value=args.ftdi_initial_value,
+                    ftdi_reset_bit=args.ftdi_reset_bit,
                     daisy_chain_device_number=args.daisy_chain_number,
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
