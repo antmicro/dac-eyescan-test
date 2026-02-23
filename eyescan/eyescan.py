@@ -1,4 +1,5 @@
-import ftd2xx
+from pyftdi.jtag import JtagEngine
+from pyftdi.bits import BitSequence
 import argparse
 import pathlib
 from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, TestPattern
@@ -16,93 +17,40 @@ from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMM
 # ws_unshadowed 0x34 Unshadowed. Fields for silicon characterization.
 # ws_char 0x33 Char. Fields used for eye scan.
 
-FTDI_SYNC_BITBANG_MODE = 0x04
-BITBANG_OUTPUT_BIT = 2
+JTAG_CLK_FREQ = 1E5
 
 
-def jtag_write_read(dev, data):
-    c = dev.write(bytes(data))
-    return dev.read(c)
+def select_command(jtag: JtagEngine, daisy_chain_device_number: int,
+                   daisy_chain_device_count: int, command: str):
+    jtag.write_ir(
+        BitSequence(BYPASS_COMMAND *
+                    (daisy_chain_device_count - daisy_chain_device_number) +
+                    IEEE_1500_IR_COMMAND + BYPASS_COMMAND *
+                    (daisy_chain_device_number - 1),
+                    msb=False))
+    jtag.write_dr(
+        BitSequence(command + "0" * (daisy_chain_device_number - 1),
+                    msb=False))
+    jtag.write_ir(
+        BitSequence(BYPASS_COMMAND *
+                    (daisy_chain_device_count - daisy_chain_device_number) +
+                    RESET_STATE_COMMAND + BYPASS_COMMAND *
+                    (daisy_chain_device_number - 1),
+                    msb=False))
+    jtag.write_ir(
+        BitSequence(BYPASS_COMMAND *
+                    (daisy_chain_device_count - daisy_chain_device_number) +
+                    IEEE_1500_DR_COMMAND + BYPASS_COMMAND *
+                    (daisy_chain_device_number - 1),
+                    msb=False))
 
 
-def encode_bitbang_dr(data):
-    trstb = "".join(['00'] * 12 + ['00'
-                                   for _ in range(len(data) - 1)] + ['0'] * 27)
-    tms = "".join(['00'] * 9 + ['1100'] + ['00'
-                                           for _ in range(len(data) - 1)] +
-                  ["00111100000000000000000000000"])
-    tdo = "".join(['00'] * 12 + ['00'
-                                 for _ in range(len(data) - 1)] + ['0'] * 27)
-    tdi = "".join(['00'] * 12 + [i + i for i in data] + ['0'] * 27)
-    tclk = "".join(['00'] * 5 + ['01'] * 7 + ['01' for _ in range(len(data))] +
-                   ['01'] * 12 + ['0'])
-
-    high_signal = "1" * len(trstb)
-    return [
-        int("".join(i), 2) for i in zip(high_signal, high_signal, high_signal,
-                                        trstb, tms, tdo, tdi, tclk)
-    ]
-
-
-def encode_bitbang_ir(data):
-    trstb = "".join(['00'] * 13 + ['00'
-                                   for _ in range(len(data) - 1)] + ['0'] * 27)
-    tms = "".join(['00'] * 9 + ['11110000'] +
-                  ['00' for _ in range(len(data) - 1)] +
-                  ["111100000000000000000000000"])
-    tdo = "".join(['00'] * 13 + ['00'
-                                 for _ in range(len(data) - 1)] + ['0'] * 27)
-    tdi = "".join(['00'] * 13 + [i + i for i in data] + ['0'] * 25)
-    tclk = "".join(['00'] * 5 + ['01'] * 8 + ['01' for _ in range(len(data))] +
-                   ['01'] * 12 + ['0'])
-
-    high_signal = "1" * len(trstb)
-    return [
-        int("".join(i), 2) for i in zip(high_signal, high_signal, high_signal,
-                                        trstb, tms, tdo, tdi, tclk)
-    ]
-
-
-def select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
-                   command):
-    jtag_write_read(
-        dev,
-        encode_bitbang_ir(
-            BYPASS_COMMAND *
-            (daisy_chain_device_count - daisy_chain_device_number) +
-            IEEE_1500_IR_COMMAND + BYPASS_COMMAND *
-            (daisy_chain_device_number - 1)))
-    jtag_write_read(
-        dev,
-        encode_bitbang_dr(command + "0" * (daisy_chain_device_number - 1)))
-    jtag_write_read(
-        dev,
-        encode_bitbang_ir(
-            BYPASS_COMMAND *
-            (daisy_chain_device_count - daisy_chain_device_number) +
-            RESET_STATE_COMMAND + BYPASS_COMMAND *
-            (daisy_chain_device_number - 1)))
-    jtag_write_read(
-        dev,
-        encode_bitbang_ir(
-            BYPASS_COMMAND *
-            (daisy_chain_device_count - daisy_chain_device_number) +
-            IEEE_1500_DR_COMMAND + BYPASS_COMMAND *
-            (daisy_chain_device_number - 1)))
-
-
-def decode_bitbang(data):
-    d = [bin(i)[2:] for i in data]
-    decoded_data = ["".join(i) for i in zip(*d)]
-    return decoded_data
-
-
-def read_back_from_char(dev,
-                        daisy_chain_device_number,
-                        daisy_chain_device_count,
-                        voltage_off,
-                        phase_off,
-                        bit_select,
+def read_back_from_char(jtag: JtagEngine,
+                        daisy_chain_device_number: int,
+                        daisy_chain_device_count: int,
+                        voltage_off: int,
+                        phase_off: int,
+                        bit_select: int,
                         is_r0=True):
     bits = ws_char(phase_off,
                    bit_select,
@@ -110,85 +58,72 @@ def read_back_from_char(dev,
                    es=0b0001,
                    esword=255,
                    voltage_offset_override=True).to_binary()[::-1]
-    encoded_data = encode_bitbang_dr(
+    encoded_data = BitSequence(
         "0" * (daisy_chain_device_count - daisy_chain_device_number) + bits +
-        "0" * (daisy_chain_device_number - 1) + ("" if is_r0 else "0"))
-    readback = jtag_write_read(dev, encoded_data)
-    TMS_BIT = 3
-    readback_decoded = decode_bitbang(readback)
-    readback_decoded = readback_decoded[
-        -BITBANG_OUTPUT_BIT -
-        1][readback_decoded[-TMS_BIT - 1].index("11") +
-           6:readback_decoded[-TMS_BIT - 1].index("1111") + 2]
-    readback_decoded = readback_decoded[::2][::-1][daisy_chain_device_number -
-                                                   1:][0 if is_r0 else 2:]
+        "0" * (daisy_chain_device_number - 1) + ("" if is_r0 else "0"),
+        msb=False)
+    jtag.change_state('shift_dr')
+    readback = jtag.shift_and_update_register(encoded_data)
+    jtag.go_idle()
+    readback_decoded = str(readback).replace(" ", "")
+    readback_decoded = readback_decoded.split(":")[1]
+    readback_decoded = readback_decoded[::-1][daisy_chain_device_number -
+                                              1:][::-1][0 if is_r0 else 2:]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
                                2), int(readback_decoded[146:158][::-1], 2)
 
 
-def setup_device(dev, ftdi_bitmask, ftdi_baudrate):
-    dev.resetDevice()
-    dev.setBitMode(ftdi_bitmask, FTDI_SYNC_BITBANG_MODE)
-    dev.setBaudRate(ftdi_baudrate)
-    queue_status = dev.getQueueStatus()
-    if queue_status > 0:
-        dev.read(queue_status)
-
-
-def configure_receiver_block(dev, daisy_chain_device_number,
-                             daisy_chain_device_count, receiver_block,
-                             test_pattern):
-    select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
+def configure_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
+                             daisy_chain_device_count: int,
+                             receiver_block: int, test_pattern: TestPattern):
+    select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
-    jtag_write_read(
-        dev,
-        encode_bitbang_dr(ws_cfg().to_binary()[::-1] + "0" *
-                          (daisy_chain_device_number - 1) +
-                          ("0" if receiver_block == 1 else "")))
-    select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
+    jtag.write_dr(
+        BitSequence(ws_cfg().to_binary()[::-1] + "0" *
+                    (daisy_chain_device_number - 1) +
+                    ("0" if receiver_block == 1 else ""),
+                    msb=False))
+    select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
-    jtag_write_read(
-        dev,
-        encode_bitbang_dr(
-            ws_cfg(core_we_head=True,
-                   core_we=True,
-                   char_we=True,
-                   core_we_tail=True).to_binary()[::-1] + "0" *
-            (daisy_chain_device_number - 1) +
-            ("0" if receiver_block == 1 else "")))
-    select_command(dev, daisy_chain_device_number, daisy_chain_device_count,
+    jtag.write_dr(
+        BitSequence(ws_cfg(
+            core_we_head=True, core_we=True, char_we=True,
+            core_we_tail=True).to_binary()[::-1] + "0" *
+                    (daisy_chain_device_number - 1) +
+                    ("0" if receiver_block == 1 else ""),
+                    msb=False))
+    select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
-    jtag_write_read(
-        dev,
-        encode_bitbang_dr(
-            ws_core(enpll=True,
-                    mpy=5,
-                    enrx=True,
-                    buswidth=2,
-                    term=1,
-                    eq=1,
-                    enoc=True,
-                    cfg_ovr=True,
-                    testpatt=test_pattern).to_binary()[::-1] + "0" *
-            (daisy_chain_device_number - 1) +
-            ("0" if receiver_block == 1 else "")))
+    jtag.write_dr(
+        BitSequence(ws_core(enpll=True,
+                            mpy=5,
+                            enrx=True,
+                            buswidth=2,
+                            term=1,
+                            eq=1,
+                            enoc=True,
+                            cfg_ovr=True,
+                            testpatt=test_pattern).to_binary()[::-1] + "0" *
+                    (daisy_chain_device_number - 1) +
+                    ("0" if receiver_block == 1 else ""),
+                    msb=False))
 
 
-def readout_receiver_block(dev, daisy_chain_device_number,
-                           daisy_chain_device_count, bit_number,
-                           receiver_block):
+def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
+                           daisy_chain_device_count: int, bit_number: int,
+                           receiver_block: int):
     for voltage in range(31, -33, -1):
         for bit_select in range(bit_number):
-            select_command(dev, daisy_chain_device_number,
+            select_command(jtag, daisy_chain_device_number,
                            daisy_chain_device_count,
                            COMMANDS[receiver_block]["SELECT_READBACK"])
-            read_back_from_char(dev, daisy_chain_device_number,
+            read_back_from_char(jtag, daisy_chain_device_number,
                                 daisy_chain_device_count, voltage & 0xff, 0,
                                 bit_select, receiver_block == 0)
             for phase in range(15, -17, -1):
-                amplitudes = read_back_from_char(dev,
+                amplitudes = read_back_from_char(jtag,
                                                  daisy_chain_device_number,
                                                  daisy_chain_device_count,
                                                  voltage & 0xff, phase & 0xff,
@@ -199,21 +134,27 @@ def readout_receiver_block(dev, daisy_chain_device_number,
                            phase, amp)
 
 
-def perform_eyescan(ftdi_dev, ftdi_bitmask, ftdi_baudrate,
-                    daisy_chain_device_number, daisy_chain_device_count,
-                    output_path, bit_number, test_pattern):
-    with ftd2xx.open(ftdi_dev) as dev:
-        setup_device(dev, ftdi_bitmask, ftdi_baudrate)
+def perform_eyescan(pyftdi_url: str, daisy_chain_device_number: int,
+                    daisy_chain_device_count: int,
+                    output_path: str | pathlib.Path, bit_number: int,
+                    test_pattern: TestPattern):
+    try:
+        jtag = JtagEngine(frequency=JTAG_CLK_FREQ)
+        jtag.configure(pyftdi_url)
+        jtag.reset(hw_reset=True, tap_reset=True)
         with open(output_path, "w") as file:
             for receiver_block in range(2):
-                configure_receiver_block(dev, daisy_chain_device_number,
+                configure_receiver_block(jtag, daisy_chain_device_number,
                                          daisy_chain_device_count,
                                          receiver_block, test_pattern)
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
-                        dev, daisy_chain_device_number,
+                        jtag, daisy_chain_device_number,
                         daisy_chain_device_count, bit_number, receiver_block):
                     file.write(
                         f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
+    finally:
+        jtag.close()
+        del jtag
 
 
 def parse_args():
@@ -228,26 +169,11 @@ def parse_args():
                         required=True,
                         type=pathlib.Path,
                         help="output file path")
-    parser.add_argument('-d',
-                        '--device',
-                        type=int,
-                        default=0,
-                        help="FTDI device number")
     parser.add_argument('-b',
                         '--bit-number',
                         type=int,
                         default=20,
                         help="how many bits to check")
-    parser.add_argument('-m',
-                        '--ftdi-bitmask',
-                        type=lambda x: int(x, 0),
-                        default=0b1000_1011,
-                        help="FTDI bitmask")
-    parser.add_argument('-r',
-                        '--ftdi-baudrate',
-                        type=int,
-                        default=115200,
-                        help="FTDI baudrate")
     parser.add_argument('-c',
                         '--daisy-chain-count',
                         type=int,
@@ -258,6 +184,11 @@ def parse_args():
                         type=int,
                         default=1,
                         help="which device from JTAG daisy-chain to read")
+    parser.add_argument('-u',
+                        '--pyftdi-url',
+                        type=str,
+                        default='ftdi:///1',
+                        help="pyftdi connection URL")
 
     def parse_test_pattern(pattern):
         try:
@@ -279,9 +210,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    perform_eyescan(ftdi_dev=args.device,
-                    ftdi_bitmask=args.ftdi_bitmask,
-                    ftdi_baudrate=args.ftdi_baudrate,
+    perform_eyescan(pyftdi_url=args.pyftdi_url,
                     daisy_chain_device_number=args.daisy_chain_number,
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
