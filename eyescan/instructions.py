@@ -17,12 +17,14 @@ COMMANDS = [
     {
         'SELECT_CFG': prepare_bits(0x3500, 24),
         'SELECT_CORE_INPUTS': prepare_bits(0x3000, 24),
+        'SELECT_TUNING': prepare_bits(0x3100, 24),
         'SELECT_READBACK': prepare_bits(0x3300, 24)
     },
     # R1 opcodes
     {
         'SELECT_CFG': prepare_bits(0x35, 24),
         'SELECT_CORE_INPUTS': prepare_bits(0x30, 24),
+        'SELECT_TUNING': prepare_bits(0x31, 24),
         'SELECT_READBACK': prepare_bits(0x33, 24)
     }
 ]
@@ -92,6 +94,41 @@ class ws_cfg:
         body = (self.core_we + self.tuning_we + self.debug_we + self.char_we +
                 self.unshadowed_we) * 4
         return "0" + "0" + self.core_we_head + body + self.core_we_tail + self.tuning_we_tail + self.debug_we_tail + "0"
+
+
+class ws_tuning:
+
+    def __init__(self,
+                 patterrthr=0,
+                 patt_timer=False,
+                 rxdsel=0,
+                 encor=False,
+                 eqzero=0,
+                 eqz_ovr=False,
+                 eqlevel=0,
+                 eq_ovr=False,
+                 eqboost=0,
+                 rxasel=0,
+                 asel=0,
+                 usr_patt=0):
+        self.patterrthr = format_field(patterrthr, 3)
+        self.patt_timer = format_field(patt_timer, 1)
+        self.rxdsel = format_field(rxdsel, 4)
+        self.encor = format_field(encor, 1)
+        self.eqzero = format_field(eqzero, 5)
+        self.eqz_ovr = format_field(eqz_ovr, 1)
+        self.eqlevel = format_field(eqlevel, 16)
+        self.eq_ovr = format_field(eq_ovr, 1)
+        self.eqboost = format_field(eqboost, 2)
+        self.rxasel = format_field(rxasel, 3)
+        self.asel = format_field(asel, 4)
+        self.usr_patt = format_field(usr_patt, 20)
+
+    def to_binary(self):
+        body = (self.patterrthr + self.patt_timer + self.rxdsel + self.encor +
+                self.eqzero + self.eqz_ovr + self.eqlevel + self.eq_ovr +
+                self.eqboost + self.rxasel) * 4
+        return "0" + "0" + body + self.asel + self.usr_patt + "0"
 
 
 class TestPattern(Enum):

@@ -2,7 +2,8 @@ from pyftdi.jtag import JtagEngine
 from pyftdi.bits import BitSequence
 import argparse
 import pathlib
-from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, TestPattern
+import time
+from instructions import IEEE_1500_IR_COMMAND, IEEE_1500_DR_COMMAND, BYPASS_COMMAND, COMMANDS, RESET_STATE_COMMAND, ws_char, ws_cfg, ws_core, ws_tuning, TestPattern
 
 # See https://e2e.ti.com/cfs-file/__key/communityserver-discussions-components-files/73/2625.DAC38J84-RX-Tests-_2D00_-Version-1p1.pdf
 
@@ -65,6 +66,7 @@ def read_back_from_char(jtag: JtagEngine,
                         voltage_off: int,
                         phase_off: int,
                         bit_select: int,
+                        dwell_time: float,
                         is_r0=True):
     bits = ws_char(phase_off,
                    bit_select,
@@ -73,6 +75,8 @@ def read_back_from_char(jtag: JtagEngine,
                    esword=255,
                    voltage_offset_override=True).to_binary()[::-1] + (
                        "" if is_r0 else "0")
+    shift_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
+    time.sleep(dwell_time)
     readback = shift_dr(bits, jtag, daisy_chain_device_number,
                         daisy_chain_device_count)
     readback_decoded = readback[::-1][daisy_chain_device_number -
@@ -92,10 +96,13 @@ def configure_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
     write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
     select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CFG"])
-    bits = ws_cfg(
-        core_we_head=True, core_we=True, char_we=True,
-        core_we_tail=True).to_binary()[::-1] + ("0"
-                                                if receiver_block == 1 else "")
+    bits = ws_cfg(core_we_head=True,
+                  core_we=True,
+                  char_we=True,
+                  tuning_we=True,
+                  core_we_tail=True,
+                  tuning_we_tail=True).to_binary()[::-1] + (
+                      "0" if receiver_block == 1 else "")
     write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
     select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
                    COMMANDS[receiver_block]["SELECT_CORE_INPUTS"])
@@ -110,11 +117,16 @@ def configure_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                    testpatt=test_pattern).to_binary()[::-1] + (
                        "0" if receiver_block == 1 else "")
     write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
+    select_command(jtag, daisy_chain_device_number, daisy_chain_device_count,
+                   COMMANDS[receiver_block]["SELECT_TUNING"])
+    bits = ws_tuning(
+        encor=True).to_binary()[::-1] + ("0" if receiver_block == 1 else "")
+    write_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
 
 
 def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                            daisy_chain_device_count: int, bit_number: int,
-                           receiver_block: int):
+                           receiver_block: int, dwell_time: float):
     for voltage in range(31, -33, -1):
         for bit_select in range(bit_number):
             select_command(jtag, daisy_chain_device_number,
@@ -122,13 +134,13 @@ def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                            COMMANDS[receiver_block]["SELECT_READBACK"])
             read_back_from_char(jtag, daisy_chain_device_number,
                                 daisy_chain_device_count, voltage & 0xff, 0,
-                                bit_select, receiver_block == 0)
+                                bit_select, dwell_time, receiver_block == 0)
             for phase in range(15, -17, -1):
                 amplitudes = read_back_from_char(jtag,
                                                  daisy_chain_device_number,
                                                  daisy_chain_device_count,
                                                  voltage & 0xff, phase & 0xff,
-                                                 bit_select,
+                                                 bit_select, dwell_time,
                                                  receiver_block == 0)
                 for lane, amp in enumerate(amplitudes):
                     yield (lane + 4 * receiver_block, bit_select, voltage,
@@ -140,7 +152,7 @@ def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
                     ftdi_reset_bit: int, daisy_chain_device_number: int,
                     daisy_chain_device_count: int,
                     output_path: str | pathlib.Path, bit_number: int,
-                    test_pattern: TestPattern):
+                    test_pattern: TestPattern, dwell_time: float):
     try:
         jtag = JtagEngine(frequency=ftdi_jtag_frequency,
                           direction=ftdi_direction,
@@ -155,7 +167,8 @@ def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
                                          receiver_block, test_pattern)
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
                         jtag, daisy_chain_device_number,
-                        daisy_chain_device_count, bit_number, receiver_block):
+                        daisy_chain_device_count, bit_number, receiver_block,
+                        dwell_time):
                     file.write(
                         f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
     finally:
@@ -190,6 +203,11 @@ def parse_args():
                         type=int,
                         default=1,
                         help="which device from JTAG daisy-chain to read")
+    parser.add_argument('-t',
+                        '--dwell-time',
+                        type=lambda x: float(x) / 1000,
+                        default=0,
+                        help="Dwell time in miliseconds")
     parser.add_argument('-f',
                         '--ftdi-jtag-frequency',
                         type=float,
@@ -245,7 +263,8 @@ def main():
                     daisy_chain_device_count=args.daisy_chain_count,
                     output_path=args.output,
                     bit_number=args.bit_number,
-                    test_pattern=args.test_pattern)
+                    test_pattern=args.test_pattern,
+                    dwell_time=args.dwell_time)
 
 
 if __name__ == "__main__":
