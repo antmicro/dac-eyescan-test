@@ -66,7 +66,6 @@ def read_back_from_char(jtag: JtagEngine,
                         voltage_off: int,
                         phase_off: int,
                         bit_select: int,
-                        dwell_time: float,
                         is_r0=True):
     bits = ws_char(phase_off,
                    bit_select,
@@ -75,8 +74,6 @@ def read_back_from_char(jtag: JtagEngine,
                    esword=255,
                    voltage_offset_override=True).to_binary()[::-1] + (
                        "" if is_r0 else "0")
-    shift_dr(bits, jtag, daisy_chain_device_number, daisy_chain_device_count)
-    time.sleep(dwell_time)
     readback = shift_dr(bits, jtag, daisy_chain_device_number,
                         daisy_chain_device_count)
     readback_decoded = readback[daisy_chain_device_number -
@@ -135,17 +132,78 @@ def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                            COMMANDS[receiver_block]["SELECT_READBACK"])
             read_back_from_char(jtag, daisy_chain_device_number,
                                 daisy_chain_device_count, voltage & 0xff, 0,
-                                bit_select, dwell_time, receiver_block == 0)
+                                bit_select, receiver_block == 0)
             for phase in range(15, -17, -1 * phase_increment):
+                read_back_from_char(jtag, daisy_chain_device_number,
+                                    daisy_chain_device_count, voltage & 0xff,
+                                    phase & 0xff, bit_select,
+                                    receiver_block == 0)
+                time.sleep(dwell_time)
                 amplitudes = read_back_from_char(jtag,
                                                  daisy_chain_device_number,
                                                  daisy_chain_device_count,
                                                  voltage & 0xff, phase & 0xff,
-                                                 bit_select, dwell_time,
+                                                 bit_select,
                                                  receiver_block == 0)
                 for lane, amp in enumerate(amplitudes):
-                    yield (lane + 4 * receiver_block, bit_select, voltage,
-                           phase, amp)
+                    yield lane + 4 * receiver_block, bit_select, voltage, phase, amp
+
+
+def reset_state_whole_chain(jtag, daisy_chain_device_number,
+                            daisy_chain_device_count):
+    jtag.write_ir(
+        BitSequence(RESET_STATE_COMMAND *
+                    (daisy_chain_device_count - daisy_chain_device_number) +
+                    RESET_STATE_COMMAND + RESET_STATE_COMMAND *
+                    (daisy_chain_device_number - 1),
+                    msb=False))
+
+
+def parallel_readout_receiver_block(jtag: JtagEngine,
+                                    daisy_chain_device_count: int,
+                                    bit_number: int, receiver_block: int,
+                                    dwell_time: float, voltage_increment: int,
+                                    phase_increment: int):
+    for voltage in range(31, -33, -1 * voltage_increment):
+        for bit_select in range(bit_number):
+            for daisy_chain_device_number in range(
+                    1, daisy_chain_device_count + 1):
+                reset_state_whole_chain(jtag, daisy_chain_device_number,
+                                        daisy_chain_device_count)
+                select_command(jtag, daisy_chain_device_number,
+                               daisy_chain_device_count,
+                               COMMANDS[receiver_block]["SELECT_READBACK"])
+                read_back_from_char(jtag, daisy_chain_device_number,
+                                    daisy_chain_device_count, voltage & 0xff,
+                                    0, bit_select, receiver_block == 0)
+            for phase in range(15, -17, -1 * phase_increment):
+                start = time.time()
+                for daisy_chain_device_number in range(
+                        1, daisy_chain_device_count + 1):
+                    reset_state_whole_chain(jtag, daisy_chain_device_number,
+                                            daisy_chain_device_count)
+                    write_ir(IEEE_1500_DR_COMMAND, jtag,
+                             daisy_chain_device_number,
+                             daisy_chain_device_count)
+                    read_back_from_char(jtag, daisy_chain_device_number,
+                                        daisy_chain_device_count,
+                                        voltage & 0xff, phase & 0xff,
+                                        bit_select, receiver_block == 0)
+
+                time.sleep(max(dwell_time - (time.time() - start), 0))
+                for daisy_chain_device_number in range(
+                        1, daisy_chain_device_count + 1):
+                    reset_state_whole_chain(jtag, daisy_chain_device_number,
+                                            daisy_chain_device_count)
+                    write_ir(IEEE_1500_DR_COMMAND, jtag,
+                             daisy_chain_device_number,
+                             daisy_chain_device_count)
+                    amplitudes = read_back_from_char(
+                        jtag, daisy_chain_device_number,
+                        daisy_chain_device_count, voltage & 0xff, phase & 0xff,
+                        bit_select, receiver_block == 0)
+                    for lane, amp in enumerate(amplitudes):
+                        yield daisy_chain_device_number, lane + 4 * receiver_block, bit_select, voltage, phase, amp
 
 
 def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
@@ -164,15 +222,52 @@ def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
         jtag.reset(hw_reset=True, tap_reset=True)
         with open(output_path, "w") as file:
             for receiver_block in range(2):
-                configure_receiver_block(jtag, daisy_chain_device_number,
-                                         daisy_chain_device_count,
-                                         receiver_block, test_pattern)
+                for daisy_chain_device_number in range(
+                        1, daisy_chain_device_count + 1):
+                    configure_receiver_block(jtag, daisy_chain_device_number,
+                                             daisy_chain_device_count,
+                                             receiver_block, test_pattern)
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
                         jtag, daisy_chain_device_number,
                         daisy_chain_device_count, bit_number, receiver_block,
                         dwell_time, voltage_increment, phase_increment):
                     file.write(
-                        f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
+                        f"{daisy_chain_device_number}\t{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n"
+                    )
+    finally:
+        jtag.close()
+        del jtag
+
+
+def perform_parallel_eyescan(
+        pyftdi_url: str, ftdi_jtag_frequency: float, ftdi_direction: int,
+        ftdi_initial_value: int, ftdi_reset_bit: int,
+        daisy_chain_device_count: int, output_path: str | pathlib.Path,
+        bit_number: int, test_pattern: TestPattern, dwell_time: float,
+        voltage_increment: int, phase_increment: int, **kwargs):
+    try:
+        jtag = JtagEngine(frequency=ftdi_jtag_frequency,
+                          direction=ftdi_direction,
+                          initial=ftdi_initial_value,
+                          rst_bit=ftdi_reset_bit)
+        jtag.configure(pyftdi_url)
+        jtag.reset(hw_reset=True, tap_reset=True)
+        with open(output_path, "w") as file:
+            for receiver_block in range(2):
+                for daisy_chain_device_number in range(
+                        1, daisy_chain_device_count + 1):
+                    configure_receiver_block(jtag, daisy_chain_device_number,
+                                             daisy_chain_device_count,
+                                             receiver_block, test_pattern)
+                    reset_state_whole_chain(jtag, daisy_chain_device_number,
+                                            daisy_chain_device_count)
+                for daisy_chain_device_number, lane, bit, voltage, phase, amplitude in parallel_readout_receiver_block(
+                        jtag, daisy_chain_device_count, bit_number,
+                        receiver_block, dwell_time, voltage_increment,
+                        phase_increment):
+                    file.write(
+                        f"{daisy_chain_device_number}\t{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n"
+                    )
     finally:
         jtag.close()
         del jtag
@@ -243,6 +338,10 @@ def parse_args():
                         type=int,
                         default=1,
                         help="phase offset increment")
+    parser.add_argument(
+        '--parallel',
+        action='store_true',
+        help="Run eyescan test for all DACs in daisy-chain in parallel")
 
     def parse_test_pattern(pattern):
         try:
@@ -264,19 +363,20 @@ def parse_args():
 
 def main():
     args = parse_args()
-    perform_eyescan(pyftdi_url=args.pyftdi_url,
-                    ftdi_jtag_frequency=args.ftdi_jtag_frequency,
-                    ftdi_direction=args.ftdi_direction,
-                    ftdi_initial_value=args.ftdi_initial_value,
-                    ftdi_reset_bit=args.ftdi_reset_bit,
-                    daisy_chain_device_number=args.daisy_chain_number,
-                    daisy_chain_device_count=args.daisy_chain_count,
-                    output_path=args.output,
-                    bit_number=args.bit_number,
-                    test_pattern=args.test_pattern,
-                    dwell_time=args.dwell_time,
-                    voltage_increment=args.voltage_increment,
-                    phase_increment=args.phase_increment)
+    perform_eyescan_func = perform_parallel_eyescan if args.parallel else perform_eyescan
+    perform_eyescan_func(pyftdi_url=args.pyftdi_url,
+                         ftdi_jtag_frequency=args.ftdi_jtag_frequency,
+                         ftdi_direction=args.ftdi_direction,
+                         ftdi_initial_value=args.ftdi_initial_value,
+                         ftdi_reset_bit=args.ftdi_reset_bit,
+                         daisy_chain_device_count=args.daisy_chain_count,
+                         daisy_chain_device_number=args.daisy_chain_number,
+                         output_path=args.output,
+                         bit_number=args.bit_number,
+                         test_pattern=args.test_pattern,
+                         dwell_time=args.dwell_time,
+                         voltage_increment=args.voltage_increment,
+                         phase_increment=args.phase_increment)
 
 
 if __name__ == "__main__":
