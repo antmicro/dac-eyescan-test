@@ -79,8 +79,8 @@ def read_back_from_char(jtag: JtagEngine,
     time.sleep(dwell_time)
     readback = shift_dr(bits, jtag, daisy_chain_device_number,
                         daisy_chain_device_count)
-    readback_decoded = readback[::-1][daisy_chain_device_number -
-                                      1:][::-1][0 if is_r0 else 2:]
+    readback_decoded = readback[daisy_chain_device_number -
+                                1:][::-1][0 if is_r0 else 2:][::-1]
     return int(readback_decoded[2:14][::-1],
                2), int(readback_decoded[50:62][::-1],
                        2), int(readback_decoded[98:110][::-1],
