@@ -126,8 +126,9 @@ def configure_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
 
 def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
                            daisy_chain_device_count: int, bit_number: int,
-                           receiver_block: int, dwell_time: float):
-    for voltage in range(31, -33, -1):
+                           receiver_block: int, dwell_time: float,
+                           voltage_increment: int, phase_increment: int):
+    for voltage in range(31, -33, -1 * voltage_increment):
         for bit_select in range(bit_number):
             select_command(jtag, daisy_chain_device_number,
                            daisy_chain_device_count,
@@ -135,7 +136,7 @@ def readout_receiver_block(jtag: JtagEngine, daisy_chain_device_number: int,
             read_back_from_char(jtag, daisy_chain_device_number,
                                 daisy_chain_device_count, voltage & 0xff, 0,
                                 bit_select, dwell_time, receiver_block == 0)
-            for phase in range(15, -17, -1):
+            for phase in range(15, -17, -1 * phase_increment):
                 amplitudes = read_back_from_char(jtag,
                                                  daisy_chain_device_number,
                                                  daisy_chain_device_count,
@@ -152,7 +153,8 @@ def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
                     ftdi_reset_bit: int, daisy_chain_device_number: int,
                     daisy_chain_device_count: int,
                     output_path: str | pathlib.Path, bit_number: int,
-                    test_pattern: TestPattern, dwell_time: float):
+                    test_pattern: TestPattern, dwell_time: float,
+                    voltage_increment: int, phase_increment: int):
     try:
         jtag = JtagEngine(frequency=ftdi_jtag_frequency,
                           direction=ftdi_direction,
@@ -168,7 +170,7 @@ def perform_eyescan(pyftdi_url: str, ftdi_jtag_frequency: float,
                 for lane, bit, voltage, phase, amplitude in readout_receiver_block(
                         jtag, daisy_chain_device_number,
                         daisy_chain_device_count, bit_number, receiver_block,
-                        dwell_time):
+                        dwell_time, voltage_increment, phase_increment):
                     file.write(
                         f"{lane}\t{bit}\t{voltage}\t{phase}\t{amplitude}\n")
     finally:
@@ -233,6 +235,14 @@ def parse_args():
                         type=str,
                         default='ftdi:///1',
                         help="pyftdi connection URL")
+    parser.add_argument('--voltage-increment',
+                        type=int,
+                        default=1,
+                        help="voltage offset increment")
+    parser.add_argument('--phase-increment',
+                        type=int,
+                        default=1,
+                        help="phase offset increment")
 
     def parse_test_pattern(pattern):
         try:
@@ -264,7 +274,9 @@ def main():
                     output_path=args.output,
                     bit_number=args.bit_number,
                     test_pattern=args.test_pattern,
-                    dwell_time=args.dwell_time)
+                    dwell_time=args.dwell_time,
+                    voltage_increment=args.voltage_increment,
+                    phase_increment=args.phase_increment)
 
 
 if __name__ == "__main__":
