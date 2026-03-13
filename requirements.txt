@@ -1,1 +1,1 @@
-pyftdi @ git+https://github.com/antmicro/pyftdi.git@dac-eyescan-test
+pyftdi @ https://github.com/antmicro/pyftdi/archive/dac-eyescan-test.zip
